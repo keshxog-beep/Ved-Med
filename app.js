@@ -8,6 +8,10 @@ const STORAGE_KEYS = {
   meds: "vedmed_meds"
 };
 
+// If you used Cloudflare Worker name "vedmed-gemini" on subdomain "keshxog.workers.dev"
+// then this default should work. If yours is different, update this URL.
+const GEMINI_WORKER_CHAT_URL = "https://vedmed-gemini.keshxog.workers.dev/chat";
+
 const SUPPORTED_LANGS = ["en", "hi", "or"]; // English, Hindi, Odia
 
 const I18N = {
@@ -1108,15 +1112,23 @@ function bindAssistant() {
     if (!q) return;
     input.value = "";
     pushMsg(log, "user", q);
-    toast(t("toast_querying"), t("toast_querying_sub"));
+    const thinking = pushThinking(log);
+    btn.disabled = true;
+    input.disabled = true;
     try {
-      const ans = await medicineAnswer(q);
+      const ans = await assistantAnswer(q);
+      thinking.remove();
       pushMsg(log, "bot", ans.text);
       renderSources(ans.sources || []);
       toast(t("toast_done"), t("toast_done_sub"));
     } catch (e) {
+      thinking.remove();
       pushMsg(log, "bot", "I couldn’t fetch info right now. Please try again in a minute.");
       toast(t("toast_error"), String(e && e.message ? e.message : e));
+    } finally {
+      btn.disabled = false;
+      input.disabled = false;
+      input.focus();
     }
   };
 
@@ -1124,6 +1136,43 @@ function bindAssistant() {
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") ask();
   });
+}
+
+function pushThinking(log) {
+  const msg = document.createElement("div");
+  msg.className = "msg bot";
+  msg.innerHTML = `
+    <div class="avatar" aria-hidden="true">AI</div>
+    <div class="bubble"><span class="dots" aria-label="Loading"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span></div>
+  `;
+  log.appendChild(msg);
+  log.scrollTop = log.scrollHeight;
+  return msg;
+}
+
+async function assistantAnswer(query) {
+  // Prefer Gemini via Cloudflare Worker (if configured). Fallback to public sources.
+  const gem = await Promise.allSettled([geminiAnswerViaWorker(query)]);
+  if (gem[0].status === "fulfilled" && gem[0].value && gem[0].value.text) {
+    return gem[0].value;
+  }
+  return await medicineAnswer(query);
+}
+
+async function geminiAnswerViaWorker(message) {
+  const res = await fetch(GEMINI_WORKER_CHAT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message })
+  });
+  if (!res.ok) throw new Error(`Gemini worker failed (HTTP ${res.status})`);
+  const data = await res.json();
+  const text = (data && data.text) ? String(data.text) : "";
+  if (!text) throw new Error("Empty Gemini response");
+  return {
+    text,
+    sources: [{ label: "Gemini (Cloudflare Worker)", url: GEMINI_WORKER_CHAT_URL.replace(/\/chat$/, "/") }]
+  };
 }
 
 function bindHospitals() {
@@ -1134,13 +1183,15 @@ function bindHospitals() {
 
   const run = async () => {
     list.innerHTML = "";
-    status.textContent = "Requesting location…";
+    status.innerHTML = `Requesting location… <span class="dots" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>`;
+    btn.disabled = true;
     try {
-      const pos = await getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
+      const pos = await getBestPosition();
       const lat = pos.coords.latitude;
       const lon = pos.coords.longitude;
+      const acc = pos.coords.accuracy ? ` ±${Math.round(pos.coords.accuracy)}m` : "";
       const rkm = Number(radiusSel.value || 5);
-      status.textContent = `Location: ${lat.toFixed(4)}, ${lon.toFixed(4)} • Searching within ${rkm} km…`;
+      status.textContent = `Location: ${lat.toFixed(4)}, ${lon.toFixed(4)}${acc} • Searching within ${rkm} km…`;
 
       const hospitals = await queryHospitalsOverpass(lat, lon, rkm);
       status.textContent = `${t("hospitals_found")}: ${hospitals.length}`;
@@ -1154,8 +1205,10 @@ function bindHospitals() {
         });
       });
     } catch (e) {
-      status.textContent = t("location_denied");
-      toast(t("toast_error"), t("location_denied"));
+      status.textContent = "Couldn’t get location. Turn on GPS, allow permission, and try again.";
+      toast(t("toast_error"), "Location not available. Check GPS + permissions.");
+    } finally {
+      btn.disabled = false;
     }
   };
 
@@ -1171,6 +1224,15 @@ function bindHospitals() {
 
   // Auto-run once when page opens (works if already granted; otherwise prompts).
   setTimeout(() => run(), 200);
+}
+
+async function getBestPosition() {
+  // Try high accuracy first, then fall back to normal accuracy.
+  try {
+    return await getCurrentPosition({ enableHighAccuracy: true, timeout: 12000, maximumAge: 15000 });
+  } catch {
+    return await getCurrentPosition({ enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 });
+  }
 }
 
 function bindTracker() {
