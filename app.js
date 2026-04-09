@@ -45,8 +45,8 @@ const I18N = {
     go_login: "Go to login",
     go_register: "Create an account",
 
-    assistant_title: "Medicine Assistant (Search + Summary)",
-    assistant_sub: "Ask about a medicine: use, dosage info, common side effects. Always confirm with a licensed doctor.",
+    assistant_title: "Medical Assistant (India)",
+    assistant_sub: "Ask about symptoms, first-aid, medicines, side effects, and when to see a doctor. Always confirm with a licensed doctor.",
     ask_placeholder: "E.g. Paracetamol 500mg side effects",
     ask_btn: "Ask",
     sources: "Sources",
@@ -159,8 +159,8 @@ const I18N = {
     go_login: "लॉगिन पर जाएँ",
     go_register: "खाता बनाएँ",
 
-    assistant_title: "मेडिसिन असिस्टेंट (सर्च + सारांश)",
-    assistant_sub: "दवा के उपयोग/जानकारी/सामान्य साइड-इफेक्ट पूछें। डॉक्टर से पुष्टि करें।",
+    assistant_title: "मेडिकल असिस्टेंट (भारत)",
+    assistant_sub: "लक्षण, फर्स्ट-एड, दवा, साइड-इफेक्ट और डॉक्टर कब दिखाएँ—पूछें। डॉक्टर से पुष्टि करें।",
     ask_placeholder: "जैसे Paracetamol 500mg side effects",
     ask_btn: "पूछें",
     sources: "स्रोत",
@@ -273,8 +273,8 @@ const I18N = {
     go_login: "ଲଗିନ୍ ପୃଷ୍ଠାକୁ",
     go_register: "ଅକାଉଣ୍ଟ କରନ୍ତୁ",
 
-    assistant_title: "ମେଡିସିନ୍ ସହାୟକ (ସର୍ଚ୍ + ସାରାଂଶ)",
-    assistant_sub: "ଔଷଧ ବ୍ୟବହାର/ତଥ୍ୟ/ସାଧାରଣ ସାଇଡ଼ ଇଫେକ୍ଟ ପଚାରନ୍ତୁ। ଡାକ୍ତର ସହ ପୁଷ୍ଟି କରନ୍ତୁ।",
+    assistant_title: "ମେଡିକାଲ୍ ସହାୟକ (ଭାରତ)",
+    assistant_sub: "ଲକ୍ଷଣ, ପ୍ରଥମ ସାହାଯ୍ୟ, ଔଷଧ, ସାଇଡ଼ ଇଫେକ୍ଟ ଏବଂ କେବେ ଡାକ୍ତର ଦେଖିବେ—ପଚାରନ୍ତୁ।",
     ask_placeholder: "ଉଦାହରଣ: Paracetamol 500mg side effects",
     ask_btn: "ପଚାରନ୍ତୁ",
     sources: "ସ୍ରୋତ",
@@ -1151,12 +1151,97 @@ function pushThinking(log) {
 }
 
 async function assistantAnswer(query) {
-  // Prefer Gemini via Cloudflare Worker (if configured). Fallback to public sources.
-  const gem = await Promise.allSettled([geminiAnswerViaWorker(query)]);
-  if (gem[0].status === "fulfilled" && gem[0].value && gem[0].value.text) {
-    return gem[0].value;
+  const q = String(query || "").trim();
+  if (!q) return { text: "Ask me something about a medicine or first-aid.", sources: [] };
+
+  // Prefer Gemini via Cloudflare Worker for any medical query.
+  try {
+    return await geminiAnswerViaWorker(
+      [
+        "Reply for Indian users. Be concise and practical.",
+        "If emergency red flags: tell to call 112/108.",
+        "If asking about symptoms: give possible causes + next steps + when to see a doctor.",
+        "If asking about medicines: include common side effects + cautions + interactions warning.",
+        "",
+        `User: ${q}`
+      ].join("\n")
+    );
+  } catch {
+    // If Gemini fails, use built-in first-aid for common situations.
+    const fa = firstAidAnswer(q);
+    if (fa) return fa;
+
+    // Fallback to public sources only for clear medicine questions (avoid random Wikipedia matches).
+    if (looksLikeMedicineQuestion(q)) return await medicineAnswer(q);
+
+    return {
+      text:
+        "I couldn’t reach the AI service right now.\n\n" +
+        "You can still use:\n" +
+        "- SOS tab for first-aid guidance\n" +
+        "- Hospitals tab to find nearby hospitals\n\n" +
+        "If this is urgent or severe, call 112/108.",
+      sources: []
+    };
   }
-  return await medicineAnswer(query);
+}
+
+function looksLikeMedicineQuestion(q) {
+  const s = q.toLowerCase();
+  const medWords = ["mg", "tablet", "capsule", "syrup", "dose", "dosage", "side effect", "side-effects", "precaution", "interaction", "uses"];
+  if (medWords.some((w) => s.includes(w))) return true;
+  // 1-3 tokens that look like a drug name (avoid obvious non-medicine situations).
+  if (/\b(cut|wound|burn|fever|asthma|poison|bleeding|injury|accident)\b/.test(s)) return false;
+  return s.split(/\s+/).filter(Boolean).length <= 4;
+}
+
+function firstAidAnswer(q) {
+  const s = q.toLowerCase();
+  const hit = (re) => re.test(s);
+  const mk = (title, steps) => ({
+    text: `${title}\n\n${steps.map((x) => `- ${x}`).join("\n")}\n\nEmergency: Call 112 / Ambulance 108 if severe.`,
+    sources: [{ label: "VEDMED SOS guide", url: "#/sos" }]
+  });
+
+  if (hit(/\bcut\b|\bwound\b|\bbleed(ing)?\b|\bknife\b|\binjur(y|ies)\b/)) {
+    return mk("Cut / wound (first aid)", [
+      "Wash hands. Apply pressure with clean cloth/gauze to stop bleeding.",
+      "Rinse wound with clean running water. Remove visible dirt gently.",
+      "Apply antiseptic around the wound and cover with sterile dressing.",
+      "If deep cut, heavy bleeding, or bite: seek medical care; tetanus may be needed."
+    ]);
+  }
+  if (hit(/\bburn\b|\bscald\b|\bhot oil\b|\bfire\b/)) {
+    return mk("Burns (first aid)", [
+      "Cool under cool running water for 10–20 minutes (no ice).",
+      "Remove tight items (rings) before swelling.",
+      "Cover with clean non-stick dressing. Don’t pop blisters.",
+      "Large/deep/chemical/electrical burns: call 112/108."
+    ]);
+  }
+  if (hit(/\bfever\b|\btemperature\b/)) {
+    return mk("Fever (quick guidance)", [
+      "Rest and drink fluids/ORS. Check temperature every few hours.",
+      "If high fever >24–48h, rash, breathing trouble, severe headache: consult a doctor.",
+      "Children/elderly/pregnancy: seek medical advice earlier."
+    ]);
+  }
+  if (hit(/\basthma\b|\bwheez(e|ing)\b|\bbreathless\b/)) {
+    return mk("Asthma attack (quick guidance)", [
+      "Sit upright; stay calm.",
+      "Use prescribed reliever inhaler as directed.",
+      "If not improving, difficulty speaking, blue lips: call 112/108."
+    ]);
+  }
+  if (hit(/\bpoison\b|\boverdose\b|\bchemical\b|\bvenom\b/)) {
+    return mk("Poisoning (quick guidance)", [
+      "If unconscious, seizures, severe symptoms: call 112/108 immediately.",
+      "Do not force vomiting unless a professional instructs.",
+      "Keep the container/label for doctors if possible."
+    ]);
+  }
+
+  return null;
 }
 
 async function geminiAnswerViaWorker(message) {
