@@ -13,6 +13,7 @@ const SUPPORTED_LANGS = ["en", "hi", "or"]; // English, Hindi, Odia
 const I18N = {
   en: {
     tagline: "India-first health companion",
+    nav_home: "Home",
     nav_assistant: "Assistant",
     nav_hospitals: "Hospitals",
     nav_tracker: "Tracker",
@@ -126,6 +127,7 @@ const I18N = {
   },
   hi: {
     tagline: "भारत-केन्द्रित हेल्थ साथी",
+    nav_home: "होम",
     nav_assistant: "सहायक",
     nav_hospitals: "अस्पताल",
     nav_tracker: "ट्रैकर",
@@ -239,6 +241,7 @@ const I18N = {
   },
   or: {
     tagline: "ଭାରତ-କେନ୍ଦ୍ରିକ ସ୍ୱାସ୍ଥ୍ୟ ସହାୟକ",
+    nav_home: "ହୋମ୍",
     nav_assistant: "ସହାୟକ",
     nav_hospitals: "ହସ୍ପିଟାଲ୍",
     nav_tracker: "ଟ୍ରାକର୍",
@@ -537,7 +540,7 @@ function renderI18n() {
 // --- Views ---
 function viewHome() {
   return `
-  <div class="grid">
+  <div class="grid page">
     <section class="card">
       <div class="card-h">
         <div>
@@ -553,6 +556,11 @@ function viewHome() {
         <span class="pill">Demo</span>
       </div>
       <div class="card-b">
+        <div class="row" style="justify-content:space-between; align-items:center">
+          <img src="./assets/vedmed-logo.png" alt="VEDMED logo" style="width:92px; height:92px; object-fit:contain; filter: drop-shadow(0 12px 22px rgba(109,40,217,0.16)) drop-shadow(0 12px 22px rgba(249,115,22,0.12));" />
+          <span class="pill">Dashboard</span>
+        </div>
+        <div class="hr"></div>
         <div class="two">
           <a class="btn primary" href="#/assistant">Open Assistant</a>
           <a class="btn ghost" href="#/hospitals">Find Hospitals</a>
@@ -780,15 +788,15 @@ function viewOrder() {
 
 function viewInfo() {
   const members = [
-    "Sujal kumar singh (23BCA060)",
-    "Dolly tiwari (23BCA061)",
-    "Tarun adiya pati (23BCA064)",
-    "Satyam Kumar yadav (23BCA021)"
+    { name: "Sujal kumar singh", roll: "23BCA060" },
+    { name: "Dolly tiwari", roll: "23BCA061" },
+    { name: "Tarun adiya pati", roll: "23BCA064" },
+    { name: "Satyam Kumar yadav", roll: "23BCA021" }
   ];
   const college = "Govt autonomous college rourkela sundargarh";
 
   return `
-  <section class="card">
+  <section class="card page">
     <div class="card-h">
       <div>
         <div class="title" data-i18n="info_title">${escapeHtml(t("info_title"))}</div>
@@ -797,15 +805,26 @@ function viewInfo() {
       <span class="pill">College</span>
     </div>
     <div class="card-b">
-      <div class="item">
-        <h4>Members</h4>
-        <p>${members.map((m) => `- ${m}`).join("\n")}</p>
+      <div class="team-grid">
+        ${members.map((m) => `
+          <div class="member">
+            <div>
+              <div class="m1">${escapeHtml(m.name)}</div>
+              <div class="m2">BCA • Roll: ${escapeHtml(m.roll)}</div>
+            </div>
+            <span class="badge">${escapeHtml(m.roll)}</span>
+          </div>
+        `).join("")}
       </div>
-      <div class="item" style="margin-top:10px">
-        <h4>College name</h4>
+
+      <div class="hr"></div>
+
+      <div class="item">
+        <h4>College</h4>
         <p>${escapeHtml(college)}</p>
       </div>
-      <img class="logo-img" src="./assets/college-logo.png" alt="College logo" />
+
+      <img class="logo-img" src="./assets/college-logo.png" alt="Govt Autonomous College Rourkela logo" />
     </div>
   </section>`;
 }
@@ -1113,7 +1132,7 @@ function bindHospitals() {
   const status = document.getElementById("locStatus");
   const list = document.getElementById("hospitalList");
 
-  btn.addEventListener("click", async () => {
+  const run = async () => {
     list.innerHTML = "";
     status.textContent = "Requesting location…";
     try {
@@ -1138,7 +1157,20 @@ function bindHospitals() {
       status.textContent = t("location_denied");
       toast(t("toast_error"), t("location_denied"));
     }
+  };
+
+  btn.addEventListener("click", run);
+  radiusSel.addEventListener("change", () => {
+    // If user already granted location, refresh automatically on radius change.
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: "geolocation" }).then((p) => {
+        if (p && p.state === "granted") run();
+      }).catch(() => {});
+    }
   });
+
+  // Auto-run once when page opens (works if already granted; otherwise prompts).
+  setTimeout(() => run(), 200);
 }
 
 function bindTracker() {
@@ -1422,21 +1454,30 @@ function sosGuidesHtml() {
 // --- Medicine assistant: open sources + summarizer ---
 async function medicineAnswer(query) {
   const drug = guessDrugName(query);
-  const [wiki, fda] = await Promise.allSettled([
+  const [wiki, fda, wikiSearch] = await Promise.allSettled([
     fetchWikipediaSummary(drug),
-    fetchOpenFdaSideEffects(drug)
+    fetchOpenFdaSideEffects(drug),
+    fetchWikipediaSearchFallback(drug)
   ]);
 
   const wikiOk = wiki.status === "fulfilled" ? wiki.value : null;
   const fdaOk = fda.status === "fulfilled" ? fda.value : null;
+  const wikiSearchOk = wikiSearch.status === "fulfilled" ? wikiSearch.value : null;
 
   const parts = [];
   parts.push(`Medicine: ${drug}`);
 
-  if (wikiOk && wikiOk.extract) {
+  const wikiExtract = (wikiOk && wikiOk.extract) || (wikiSearchOk && wikiSearchOk.extract) || "";
+  const wikiUrl = (wikiOk && wikiOk.url) || (wikiSearchOk && wikiSearchOk.url) || "";
+
+  if (wikiExtract) {
     parts.push("");
     parts.push("Summary (public sources):");
-    parts.push(summarizeText(wikiOk.extract, 3));
+    parts.push(summarizeText(wikiExtract, 3));
+  } else {
+    parts.push("");
+    parts.push("Summary:");
+    parts.push("- I couldn’t find a reliable public summary for this exact name. Try the generic name or spelling.");
   }
 
   if (fdaOk && fdaOk.effects && fdaOk.effects.length) {
@@ -1456,7 +1497,7 @@ async function medicineAnswer(query) {
   parts.push("- For pregnancy/children/elderly, consult a doctor/pharmacist.");
 
   const sources = [];
-  if (wikiOk && wikiOk.url) sources.push({ label: "Wikipedia", url: wikiOk.url });
+  if (wikiUrl) sources.push({ label: "Wikipedia", url: wikiUrl });
   if (fdaOk && fdaOk.url) sources.push({ label: "OpenFDA", url: fdaOk.url });
 
   return { text: parts.join("\n"), sources };
@@ -1480,24 +1521,45 @@ function titleCase(s) {
 
 async function fetchWikipediaSummary(term) {
   const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(term)}`;
-  const res = await fetch(url, { headers: { "Accept": "application/json" } });
-  if (!res.ok) throw new Error("Wikipedia request failed");
-  const data = await res.json();
+  const data = await fetchJson(url);
   return {
-    extract: data.extract || "",
-    url: (data.content_urls && data.content_urls.desktop && data.content_urls.desktop.page) || `https://en.wikipedia.org/wiki/${encodeURIComponent(term)}`
+    extract: (data && data.extract) || "",
+    url:
+      (data && data.content_urls && data.content_urls.desktop && data.content_urls.desktop.page) ||
+      `https://en.wikipedia.org/wiki/${encodeURIComponent(term)}`
   };
+}
+
+async function fetchWikipediaSearchFallback(term) {
+  // If the summary endpoint doesn't match the medicine spelling, use search to find best page title.
+  const url = `https://en.wikipedia.org/w/rest.php/v1/search/title?q=${encodeURIComponent(term)}&limit=1`;
+  const data = await fetchJson(url);
+  const title = data && data.pages && data.pages[0] && data.pages[0].title;
+  if (!title) throw new Error("No Wikipedia match");
+  return await fetchWikipediaSummary(title);
 }
 
 async function fetchOpenFdaSideEffects(term) {
   // OpenFDA FAERS (adverse events) - we aggregate reactions.
   const q = `patient.drug.medicinalproduct:"${term}"`;
   const url = `https://api.fda.gov/drug/event.json?search=${encodeURIComponent(q)}&count=patient.reaction.reactionmeddrapt.exact`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("OpenFDA request failed");
-  const data = await res.json();
+  const data = await fetchJson(url);
   const effects = (data.results || []).map((r) => r.term).filter(Boolean);
   return { effects, url };
+}
+
+async function fetchJson(url) {
+  // GitHub Pages is static; some public APIs block browser CORS. We try direct, then a CORS mirror.
+  try {
+    const res = await fetch(url, { headers: { "Accept": "application/json" } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch {
+    const mirror = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+    const res2 = await fetch(mirror, { headers: { "Accept": "application/json" } });
+    if (!res2.ok) throw new Error(`Mirror HTTP ${res2.status}`);
+    return await res2.json();
+  }
 }
 
 function summarizeText(text, sentences = 3) {
@@ -1583,6 +1645,7 @@ function hospitalItemHtml(h, myLat, myLon) {
   const dirUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(`${myLat},${myLon}`)}&destination=${encodeURIComponent(`${h.lat},${h.lon}`)}`;
   const phone = cleanPhone(h.phone);
   const callHref = phone ? `tel:${phone}` : "#";
+  const callAttrs = callHref.startsWith("tel:") ? "" : `target="_blank" rel="noreferrer"`;
   return `
     <div class="item">
       <h4>${escapeHtml(h.name)} <span class="tag ok">${escapeHtml(dist)}</span></h4>
@@ -1590,7 +1653,7 @@ function hospitalItemHtml(h, myLat, myLon) {
       <div class="meta">
         <a class="btn ghost" target="_blank" rel="noreferrer" href="${escapeHtml(mapUrl)}">Map</a>
         <a class="btn ghost" target="_blank" rel="noreferrer" href="${escapeHtml(dirUrl)}" data-i18n="directions">${escapeHtml(t("directions"))}</a>
-        <a class="btn primary" data-call target="_blank" rel="noreferrer" href="${escapeHtml(callHref)}" data-i18n="call_now">${escapeHtml(t("call_now"))}</a>
+        <a class="btn primary" data-call ${callAttrs} href="${escapeHtml(callHref)}" data-i18n="call_now">${escapeHtml(t("call_now"))}</a>
       </div>
       <div class="muted small">${phone ? `☎ ${escapeHtml(phone)}` : "☎ Not available"}</div>
     </div>
