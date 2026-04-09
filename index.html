@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#6D28D9" />
+    <title>VEDMED</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="logo" aria-hidden="true"></div>
+          <div class="brand-text">
+            <div class="brand-name">VEDMED</div>
+            <div class="brand-tag" data-i18n="tagline">India-first health companion</div>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="Primary">
+          <a class="navlink" href="#/assistant" data-i18n="nav_assistant">Assistant</a>
+          <a class="navlink" href="#/hospitals" data-i18n="nav_hospitals">Hospitals</a>
+          <a class="navlink" href="#/tracker" data-i18n="nav_tracker">Tracker</a>
+          <a class="navlink" href="#/order" data-i18n="nav_order">Order</a>
+          <a class="navlink" href="#/sos" data-i18n="nav_sos">SOS</a>
+          <a class="navlink" href="#/settings" data-i18n="nav_settings">Settings</a>
+          <a class="navlink" href="#/info" data-i18n="nav_info">Info</a>
+        </nav>
+
+        <div class="top-actions">
+          <button class="chip" id="btnTheme" type="button" title="Toggle theme">
+            <span class="chip-ico" aria-hidden="true">◐</span>
+            <span class="chip-text" data-i18n="theme">Theme</span>
+          </button>
+          <button class="chip" id="btnLang" type="button" title="Change language">
+            <span class="chip-ico" aria-hidden="true">文</span>
+            <span class="chip-text" id="langLabel">EN</span>
+          </button>
+          <div class="userbox" id="userBox">
+            <a class="chip" href="#/login" id="btnLogin">
+              <span class="chip-ico" aria-hidden="true">↪</span>
+              <span class="chip-text" data-i18n="login">Login</span>
+            </a>
+            <button class="chip danger hidden" id="btnLogout" type="button">
+              <span class="chip-ico" aria-hidden="true">⎋</span>
+              <span class="chip-text" data-i18n="logout">Logout</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main id="main" class="main" tabindex="-1">
+        <div id="view"></div>
+      </main>
+
+      <footer class="footer">
+        <div class="footer-left">
+          <span class="pill">Purple × Orange</span>
+          <span class="muted" data-i18n="footer_disclaimer">
+            Educational demo only. Not a substitute for a doctor.
+          </span>
+        </div>
+        <div class="footer-right">
+          <a class="link" href="#/privacy" data-i18n="privacy">Privacy</a>
+          <span class="dot" aria-hidden="true">•</span>
+          <a class="link" href="#/about" data-i18n="about">About</a>
+        </div>
+      </footer>
+    </div>
+
+    <div class="toast-wrap" id="toastWrap" aria-live="polite" aria-atomic="true"></div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
+
